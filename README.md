@@ -1,4 +1,4 @@
-# Showstart Ticket Checker
+# Showstart Ticket Checker 秀动余票查询器
 
 秀动余票监控工具 - 自动化监控秀动演出回流票，支持QQ群推送和微信提醒。
 
@@ -43,7 +43,7 @@ pip install selenium requests webdriver-manager pygame
 
 2. 配置NapCat服务
 
-3. 运行脚本：
+3. 运行脚本（脚本密码见Admin Password文件）：
 ```bash
 python showstart_ticket_checker.py
 ```

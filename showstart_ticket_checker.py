@@ -12,9 +12,9 @@ import random
 from datetime import datetime
 from typing import List, Dict, Optional
 
-NAPCAT_HTTP_URL = "http://127.0.0.1:3000"
-PUSHPLUS_TOKEN = "b992dec5e65449ae8676f907e91b1f22"  # 在这里填写你的 PushPlus token
-DEEPSEEK_API_KEY = "sk-ac1cdbce69dc45c2a02c33ef3a0e8989"  # 在这里填写你的 DeepSeek API Key
+NAPCAT_HTTP_URL = "http://your net code here"
+PUSHPLUS_TOKEN = "your code here"  # 在这里填写你的 PushPlus token
+DEEPSEEK_API_KEY = "your code here"  # 在这里填写你的 DeepSeek API Key
 
 # ChiliChill乐团歌词库
 CHILICHILL_LYRICS = [
