@@ -22,8 +22,8 @@ from typing import List, Dict, Optional
 
 # ===================== 常量配置 =====================
 NAPCAT_HTTP_URL = "http://127.0.0.1:3000"
-PUSHPLUS_TOKEN = "b992dec5e65449ae8676f907e91b1f22"
-DEEPSEEK_API_KEY = "sk-ac1cdbce69dc45c2a02c33ef3a0e8989"
+PUSHPLUS_TOKEN = "your code here"
+DEEPSEEK_API_KEY = "your code here"
 
 # ChiliChill乐团歌词库
 CHILICHILL_LYRICS = [
