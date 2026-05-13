@@ -12,7 +12,7 @@ import random
 from datetime import datetime
 from typing import List, Dict, Optional
 
-NAPCAT_HTTP_URL = "http://127.0.0.1:your port here"
+NAPCAT_HTTP_URL = "http://your net code here"
 PUSHPLUS_TOKEN = "your code here"  # 在这里填写你的 PushPlus token
 DEEPSEEK_API_KEY = "your code here"  # 在这里填写你的 DeepSeek API Key
 
