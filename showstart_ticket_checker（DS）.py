@@ -21,9 +21,9 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 # ===================== 常量配置 =====================
-NAPCAT_HTTP_URL = "http://127.0.0.1:3000"
-PUSHPLUS_TOKEN = "b992dec5e65449ae8676f907e91b1f22"
-DEEPSEEK_API_KEY = "sk-ac1cdbce69dc45c2a02c33ef3a0e8989"
+NAPCAT_HTTP_URL = "http://127.0.0.1:your port here"
+PUSHPLUS_TOKEN = "your code here"
+DEEPSEEK_API_KEY = "your code here"
 
 # ChiliChill乐团歌词库
 CHILICHILL_LYRICS = [
@@ -434,199 +434,128 @@ def get_ticket_info_via_browser(driver, event_id: str) -> List[Dict]:
     """通过浏览器直接执行API请求（保证认证状态）"""
     print("[API] INFO: 使用浏览器执行API请求...")
     try:
-        # 在浏览器中执行JavaScript发送API请求，包含完整的签名计算
-        js_code = f"""
-            // 生成traceId
-            function generateTraceId() {{
-                var chars = 'abcdefghijklmnopqrstuvwxyz0123456789';
-                var randomStr = '';
-                for (var i = 0; i < 32; i++) {{
-                    randomStr += chars[Math.floor(Math.random() * chars.length)];
-                }}
-                return randomStr + Date.now();
-            }}
+        # 先从localStorage获取参数
+        params_js = """
+            return JSON.stringify({
+                accessToken: localStorage.getItem('accessToken') || '',
+                sign: localStorage.getItem('sign') || '',
+                idToken: localStorage.getItem('idToken') || '',
+                token: localStorage.getItem('token') || '',
+                userInfoStr: localStorage.getItem('userInfo') || '{}',
+                st_flpv: localStorage.getItem('st_flpv') || ''
+            });
+        """
+        params_json = driver.execute_script(params_js)
+        params = json.loads(params_json)
+        
+        # 解析userId
+        user_id = ''
+        if params.get('userInfoStr'):
+            try:
+                user_info = json.loads(params['userInfoStr'])
+                if user_info.get('data'):
+                    user_id = str(user_info['data'].get('userId', ''))
+            except:
+                pass
+        
+        # 生成traceId
+        import time
+        import random
+        chars = 'abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'
+        random_str = ''.join(random.choice(chars) for _ in range(32))
+        trace_id = random_str + str(int(time.time() * 1000))
+        
+        # 构建body
+        body_dict = {
+            'activityId': str(event_id),
+            'coupon': '',
+            'st_flpv': params.get('st_flpv', ''),
+            'sign': params.get('sign', ''),
+            'trackPath': ''
+        }
+        body_str = json.dumps(body_dict, separators=(',', ':'), ensure_ascii=False)
+        
+        # 计算CRPSIGN（Python标准MD5）
+        import hashlib
+        url_path = '/wap/activity/V2/ticket/list'
+        raw = (params['accessToken'] + params['sign'] + params['idToken'] + 
+               user_id + 'wap' + params['token'] + body_str + 
+               url_path + '997' + 'wap' + trace_id)
+        crpsign = hashlib.md5(raw.encode('utf-8')).hexdigest()
+        
+        # 构建cdeviceinfo
+        cdeviceinfo = '{"vendorName":"","deviceMode":"iPhone","deviceName":"","systemName":"ios","systemVersion":"17.0","cpuMode":" ","cpuCores":"","cpuArch":"","memerySize":"","diskSize":"","network":"4G","resolution":"390*844","pixelResolution":""}'
+        
+        # 在浏览器中执行请求，使用计算好的参数
+        js_code = """
+            var accessToken = arguments[0];
+            var sign = arguments[1];
+            var idToken = arguments[2];
+            var userId = arguments[3];
+            var token = arguments[4];
+            var st_flpv = arguments[5];
+            var body = arguments[6];
+            var crpsign = arguments[7];
+            var traceId = arguments[8];
+            var cdeviceinfo = arguments[9];
+            var eventId = arguments[10];
             
-            // 正确的MD5实现
-            function md5(input) {{
-                function md5cycle(x, k) {{
-                    var a = x[0], b = x[1], c = x[2], d = x[3];
-                    a = ff(a, b, c, d, k[0], 7, -680876936);
-                    d = ff(d, a, b, c, k[1], 12, -389564586);
-                    c = ff(c, d, a, b, k[2], 17, 606105819);
-                    b = ff(b, c, d, a, k[3], 22, -1044525330);
-                    a = ff(a, b, c, d, k[4], 7, -176418897);
-                    d = ff(d, a, b, c, k[5], 12, 1200080426);
-                    c = ff(c, d, a, b, k[6], 17, -1473231341);
-                    b = ff(b, c, d, a, k[7], 22, -45705983);
-                    a = ff(a, b, c, d, k[8], 7, 1770035416);
-                    d = ff(d, a, b, c, k[9], 12, -1958414417);
-                    c = ff(c, d, a, b, k[10], 17, -42063);
-                    b = ff(b, c, d, a, k[11], 22, -1990404162);
-                    a = ff(a, b, c, d, k[12], 7, 1804603682);
-                    d = ff(d, a, b, c, k[13], 12, -40341101);
-                    c = ff(c, d, a, b, k[14], 17, -1502002290);
-                    b = ff(b, c, d, a, k[15], 22, 1236535329);
-                    a = gg(a, b, c, d, k[1], 5, -165796510);
-                    d = gg(d, a, b, c, k[6], 9, -1069501632);
-                    c = gg(c, d, a, b, k[11], 14, 643717713);
-                    b = gg(b, c, d, a, k[0], 20, -373897302);
-                    a = gg(a, b, c, d, k[5], 5, -701558691);
-                    d = gg(d, a, b, c, k[10], 9, 38016083);
-                    c = gg(c, d, a, b, k[15], 14, -660478335);
-                    b = gg(b, c, d, a, k[4], 20, -405537848);
-                    a = gg(a, b, c, d, k[9], 5, 568446438);
-                    d = gg(d, a, b, c, k[14], 9, -1019803690);
-                    c = gg(c, d, a, b, k[3], 14, -187363961);
-                    b = gg(b, c, d, a, k[8], 20, 1163531501);
-                    a = gg(a, b, c, d, k[13], 5, -1444681467);
-                    d = gg(d, a, b, c, k[2], 9, -51403784);
-                    c = gg(c, d, a, b, k[7], 14, 1735328473);
-                    b = gg(b, c, d, a, k[12], 20, -1926607734);
-                    a = hh(a, b, c, d, k[5], 4, -378558);
-                    d = hh(d, a, b, c, k[8], 11, -2022574463);
-                    c = hh(c, d, a, b, k[11], 16, 1839030562);
-                    b = hh(b, c, d, a, k[14], 23, -35309556);
-                    a = hh(a, b, c, d, k[1], 4, -1530992060);
-                    d = hh(d, a, b, c, k[4], 11, 1272893353);
-                    c = hh(c, d, a, b, k[7], 16, -155497632);
-                    b = hh(b, c, d, a, k[10], 23, -1094730640);
-                    a = hh(a, b, c, d, k[13], 4, 681279174);
-                    d = hh(d, a, b, c, k[0], 11, -358537222);
-                    c = hh(c, d, a, b, k[3], 16, -722521979);
-                    b = hh(b, c, d, a, k[6], 23, 76029189);
-                    a = hh(a, b, c, d, k[9], 4, -640364487);
-                    d = hh(d, a, b, c, k[12], 11, -421815835);
-                    c = hh(c, d, a, b, k[15], 16, 530742520);
-                    b = hh(b, c, d, a, k[2], 23, -995338651);
-                    a = ii(a, b, c, d, k[0], 6, -198630844);
-                    d = ii(d, a, b, c, k[7], 10, 1126891415);
-                    c = ii(c, d, a, b, k[14], 15, -1416354905);
-                    b = ii(b, c, d, a, k[5], 21, -57434055);
-                    a = ii(a, b, c, d, k[12], 6, 1700485571);
-                    d = ii(d, a, b, c, k[3], 10, -1894986606);
-                    c = ii(c, d, a, b, k[10], 15, -1051523);
-                    b = ii(b, c, d, a, k[1], 21, -2054922799);
-                    a = ii(a, b, c, d, k[8], 6, 1873313359);
-                    d = ii(d, a, b, c, k[15], 10, -30611744);
-                    c = ii(c, d, a, b, k[6], 15, -1560198380);
-                    b = ii(b, c, d, a, k[13], 21, 1309151649);
-                    a = ii(a, b, c, d, k[4], 6, -145523070);
-                    d = ii(d, a, b, c, k[11], 10, -1120210379);
-                    c = ii(c, d, a, b, k[2], 15, 718787259);
-                    b = ii(b, c, d, a, k[9], 21, -343485551);
-                    x[0] = add32(a, x[0]);
-                    x[1] = add32(b, x[1]);
-                    x[2] = add32(c, x[2]);
-                    x[3] = add32(d, x[3]);
-                }}
-                function cmn(q, a, b, x, s, t) {{
-                    a = add32(add32(a, q), add32(x, t));
-                    return add32((a << s) | (a >>> (32 - s)), b);
-                }}
-                function ff(a, b, c, d, x, s, t) {{
-                    return cmn((b & c) | ((~b) & d), a, b, x, s, t);
-                }}
-                function gg(a, b, c, d, x, s, t) {{
-                    return cmn((b & d) | (c & (~d)), a, b, x, s, t);
-                }}
-                function hh(a, b, c, d, x, s, t) {{
-                    return cmn(b ^ c ^ d, a, b, x, s, t);
-                }}
-                function ii(a, b, c, d, x, s, t) {{
-                    return cmn(c ^ (b | (~d)), a, b, x, s, t);
-                }}
-                function add32(a, b) {{
-                    return (a + b) & 0xFFFFFFFF;
-                }}
-                function rhex(num) {{
-                    var str = "", i;
-                    for (i = 0; i < 4; i++) {{
-                        str += ((num >> (8 * (3 - i))) & 0xFF).toString(16).padStart(2, "0");
-                    }}
-                    return str;
-                }}
-                function str2binl(str) {{
-                    var bin = [], mask = 0xFF, i;
-                    for (i = 0; i < str.length * 8; i += 8) {{
-                        bin[i >> 5] |= (str.charCodeAt(i / 8) & mask) << (24 - (i % 32));
-                    }}
-                    return bin;
-                }}
-                var nblk = ((input.length + 8) >> 6) + 1;
-                var blks = new Array(nblk * 16);
-                for (var i = 0; i < blks.length; i++) blks[i] = 0;
-                for (i = 0; i < input.length; i++) {{
-                    blks[i >> 2] |= input.charCodeAt(i) << (24 - (i % 4) * 8);
-                }}
-                blks[i >> 2] |= 0x80 << (24 - (i % 4) * 8);
-                blks[nblk * 16 - 2] = input.length * 8;
-                var x = [1732584193, 4023233417, 2562383102, 271733878];
-                for (i = 0; i < nblk; i++) {{
-                    var w = new Array(16);
-                    for (var j = 0; j < 16; j++) {{
-                        w[j] = blks[i * 16 + j];
-                    }}
-                    md5cycle(x, w);
-                }}
-                return rhex(x[0]) + rhex(x[1]) + rhex(x[2]) + rhex(x[3]);
-            }}
-            
-            var accessToken = localStorage.getItem('accessToken') || '';
-            var sign = localStorage.getItem('sign') || '';
-            var idToken = localStorage.getItem('idToken') || '';
-            var token = localStorage.getItem('token') || '';
-            var userInfoStr = localStorage.getItem('userInfo') || '{{}}';
-            var userInfo = JSON.parse(userInfoStr);
-            var userId = userInfo.data ? userInfo.data.userId : (localStorage.getItem('userId') || '');
-            var st_flpv = localStorage.getItem('st_flpv') || '';
-            
-            var urlPath = '/wap/activity/V2/ticket/list';
-            var terminal = 'wap';
-            var version = '997';
-            var traceId = generateTraceId();
-            
-            var body = JSON.stringify({{
-                activityId: '{event_id}',
-                coupon: '',
-                st_flpv: st_flpv,
-                sign: sign,
-                trackPath: '',
-                deviceType: 'H5',
-                channel: 'H5',
-                terminal: 'wap',
-                appId: 'wap',
-                version: '997'
-            }});
-            
-            // 发送请求（使用fetch API，让浏览器自动处理cookie）
             var result = '';
-            fetch('https://wap.showstart.com/v3/wap/activity/V2/ticket/list', {{
-                method: 'POST',
-                headers: {{
-                    'Content-Type': 'application/json',
-                    'CTERMINAL': 'wap',
-                    'CSAPPID': 'wap',
-                    'CVERSION': '997',
-                    'CUSAT': accessToken,
-                    'CUSUT': sign,
-                    'CUSIT': idToken,
-                    'CUSID': userId,
-                    'CDEVICENO': token,
-                    'st_flpv': st_flpv,
-                    'CRTRACEID': traceId
-                }},
-                body: body,
-                credentials: 'include'
-            }}).then(function(r) {{ return r.text(); }}).then(function(d) {{ result = d; }});
-            
-            // 等待请求完成
-            var start = Date.now();
-            while (result === '' && Date.now() - start < 5000) {{}}
+            try {
+                var xhr = new XMLHttpRequest();
+                xhr.open('POST', 'https://wap.showstart.com/v3/wap/activity/V2/ticket/list', false);
+                xhr.setRequestHeader('Content-Type', 'application/json');
+                xhr.setRequestHeader('Accept', '*/*');
+                xhr.setRequestHeader('Accept-Language', 'zh-CN,zh;q=0.9');
+                xhr.setRequestHeader('CDEVICEINFO', cdeviceinfo);
+                xhr.setRequestHeader('CDEVICENO', token);
+                xhr.setRequestHeader('CTERMINAL', 'wap');
+                xhr.setRequestHeader('CSAPPID', 'wap');
+                xhr.setRequestHeader('CVERSION', '997');
+                xhr.setRequestHeader('CUSAT', accessToken);
+                xhr.setRequestHeader('CUSUT', sign);
+                xhr.setRequestHeader('CUSIT', idToken);
+                xhr.setRequestHeader('CUSID', userId);
+                xhr.setRequestHeader('CUSNAME', 'nil');
+                xhr.setRequestHeader('CUUSERREF', token);
+                xhr.setRequestHeader('CSOURCEPATH', '');
+                xhr.setRequestHeader('CTRACKPATH', '');
+                xhr.setRequestHeader('st_flpv', st_flpv);
+                xhr.setRequestHeader('CRTRACEID', traceId);
+                xhr.setRequestHeader('CRPSIGN', crpsign);
+                xhr.setRequestHeader('Referer', 'https://wap.showstart.com/pages/activity/detail/detail?activityId=' + eventId);
+                xhr.setRequestHeader('Origin', 'https://wap.showstart.com');
+                xhr.setRequestHeader('User-Agent', 'Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1');
+                xhr.withCredentials = true;
+                
+                xhr.send(body);
+                
+                if (xhr.status === 200) {
+                    result = xhr.responseText;
+                } else {
+                    result = JSON.stringify({'error': 'HTTP error', 'status': xhr.status, 'response': xhr.responseText || 'empty'});
+                }
+            } catch(e) {
+                result = JSON.stringify({'error': 'Exception', 'message': e.message});
+            }
             
             return result;
         """
+        result_str = driver.execute_script(
+            js_code,
+            params['accessToken'],
+            params['sign'],
+            params['idToken'],
+            user_id,
+            params['token'],
+            params.get('st_flpv', ''),
+            body_str,
+            crpsign,
+            trace_id,
+            cdeviceinfo,
+            str(event_id)
+        )
         
-        result_str = driver.execute_script(js_code)
         print(f"[API] 浏览器响应: {result_str[:200]}...")
         
         result = json.loads(result_str)
@@ -1081,7 +1010,7 @@ class ShowstartTicketChecker:
         self.price_tiers = [880, 780, 580, 480, 380, 280]
         self.driver = None
         self.tokens_set = False
-        self.tokens = None
+        self.tokens = self.load_tokens()
 
     def _init_driver(self):
         if self.driver:
@@ -1125,6 +1054,9 @@ class ShowstartTicketChecker:
             self.driver = None
 
     def wait_for_login(self):
+        # 初始化浏览器并访问登录页面
+        self._init_driver()
+        self.driver.get("https://wap.showstart.com")
         print("\n请在浏览器窗口中完成后续的登录操作")
         print("注意：请使用已经在秀动账号实名认证后的手机号登录，否则票务信息加载不完整。")
         print("   1. 输入手机号并获取验证码")
@@ -1172,6 +1104,7 @@ class ShowstartTicketChecker:
                     with open(config_path, 'w', encoding='utf-8') as f:
                         json.dump(config, f, indent=2)
                     print("[SUCCESS] 登录凭证已保存")
+                    self.tokens = config
                     self.tokens_set = True
                     return True
                 else:
@@ -1360,6 +1293,10 @@ class ShowstartTicketChecker:
                     if '票已售罄' in context or '已售罄' in context or '已售完' in context:
                         found_tickets[price]['status'] = '售罄'
                         break
+                    # 检测"有乐迷未支付"状态
+                    if '乐迷未支付' in context or '未支付' in context or '订单还未支付' in context:
+                        found_tickets[price]['status'] = '回流票'
+                        break
         return sorted(found_tickets.values(), key=lambda x: x['price'], reverse=True)
 
     def run_diagnostics(self) -> Dict[str, Dict]:
@@ -1493,7 +1430,14 @@ def main():
         
         checker = ShowstartTicketChecker(use_api=use_api_mode)
         is_logged_in = checker.check_login_status()
-        
+
+        # 如果启用了API模式但没有登录凭证，先要求登录
+        if use_api_mode and not checker.tokens:
+            print("\n[INFO] API模式需要登录凭证，请先登录")
+            checker.wait_for_login()
+            checker.save_tokens_after_login()
+
+
         while True:
             print("\n" + "="*70)
             print("秀动余票查询工具 v3.4 (API模式修复版)")
@@ -1721,8 +1665,22 @@ def main():
                             prevent_sleep()
                             tickets = checker.check_tickets(event_id)
                             available_count = sum(1 for t in tickets if t['status'] == '有票')
+                            # 检测回流票状态（乐迷未支付）
+                            return_ticket_count = sum(1 for t in tickets if t['status'] == '回流票')
                             current_time_str = datetime.now().strftime('%H:%M:%S')
                             current_timestamp = time.time()
+                            
+                            # 检测回流票状态
+                            if return_ticket_count > 0:
+                                print(f"\n[{current_time_str}] ⚡ 检测到回流票机会！")
+                                return_tickets = [t for t in tickets if t['status'] == '回流票']
+                                ticket_info = "\n".join([f"• {t['price']}元 - {t['name']}" for t in return_tickets])
+                                # 发送回流票消息
+                                msg = f"⚡ 好快的手速，这个票很快就要没了，能够创建订单就是胜利，请某位欧气群友及时下单支付，谢谢~\n没创成功的也没事，下次总会有的~\n\n演出ID: {event_id}\n回流票档位：\n{ticket_info}"
+                                if not should_disable_qq_push():
+                                    for tg in target_groups:
+                                        send_to_qq_group(tg, msg)
+                                show_system_notification("⚡ 回流票机会！", f"演出ID: {event_id}\n\n回流票档位：\n{ticket_info}\n\n快去抢票！")
                             
                             if available_count > 0:
                                 confirm_count += 1

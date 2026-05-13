@@ -12,9 +12,9 @@ import random
 from datetime import datetime
 from typing import List, Dict, Optional
 
-NAPCAT_HTTP_URL = "http://127.0.0.1:3000"
-PUSHPLUS_TOKEN = "b992dec5e65449ae8676f907e91b1f22"  # 在这里填写你的 PushPlus token
-DEEPSEEK_API_KEY = "sk-ac1cdbce69dc45c2a02c33ef3a0e8989"  # 在这里填写你的 DeepSeek API Key
+NAPCAT_HTTP_URL = "http://127.0.0.1:your port here"
+PUSHPLUS_TOKEN = "your code here"  # 在这里填写你的 PushPlus token
+DEEPSEEK_API_KEY = "your code here"  # 在这里填写你的 DeepSeek API Key
 
 # ChiliChill乐团歌词库
 CHILICHILL_LYRICS = [
@@ -330,13 +330,6 @@ def make_api_request(url: str, method: str, body: dict, tokens: dict) -> dict:
             return {}
     except Exception:
         return {}
-
-def calculate_crpsign(access_token: str, sign: str, id_token: str, user_id: str,
-                      token: str, body: str, url_path: str, terminal: str, trace_id: str) -> str:
-    """计算CRPSIGN签名（使用标准MD5）"""
-    raw = (access_token + sign + id_token + str(user_id) + "wap" +
-           token + body + url_path + "997" + terminal + trace_id)
-    return hashlib.md5(raw.encode('utf-8')).hexdigest()
 
 def get_ticket_info_api(event_id: str, tokens: dict) -> List[Dict]:
     """通过秀动API获取票务信息（使用修正后的签名和请求头）"""
@@ -1112,6 +1105,10 @@ class ShowstartTicketChecker:
                     if '票已售罄' in context or '已售罄' in context or '已售完' in context:
                         found_tickets[price]['status'] = '售罄'
                         break
+                    # 检测"有乐迷未支付"状态
+                    if '乐迷未支付' in context or '未支付' in context or '订单还未支付' in context:
+                        found_tickets[price]['status'] = '回流票'
+                        break
 
         return sorted(found_tickets.values(), key=lambda x: x['price'], reverse=True)
 
@@ -1582,9 +1579,26 @@ def main():
                                 tickets = checker.check_tickets(event_id)
                                 
                                 available_count = sum(1 for t in tickets if t['status'] == '有票')
+                                # 检测回流票状态（乐迷未支付）
+                                return_ticket_count = sum(1 for t in tickets if t['status'] == '回流票')
 
                                 current_time = datetime.now().strftime('%H:%M:%S')
                                 current_timestamp = time.time()
+
+                                # 检测回流票状态
+                                if return_ticket_count > 0:
+                                    print(f"\n[{current_time}] ⚡ 检测到回流票机会！")
+                                    return_tickets = [t for t in tickets if t['status'] == '回流票']
+                                    ticket_info = "\n".join([f"• {t['price']}元 - {t['name']}" for t in return_tickets])
+                                    # 发送回流票消息
+                                    msg = f"⚡ 好快的手速，这个票很快就要没了，能够创建订单就是胜利，请某位欧气群友及时下单支付，谢谢~\n订单没创成功的也没事，下次总会有的~\n\n演出ID: {event_id}\n回流票档位：\n{ticket_info}"
+                                    print(f"[QQ推送] 准备推送消息:\n{msg}")
+                                    if should_disable_qq_push():
+                                        print(f"[QQ推送] 已到关闭时间，跳过QQ推送")
+                                    else:
+                                        for tg in target_groups:
+                                            send_to_qq_group(tg, msg)
+                                    show_system_notification("⚡ 回流票机会！", f"演出ID: {event_id}\n\n回流票档位：\n{ticket_info}\n\n快去抢票！")
 
                                 if available_count > 0:
                                     # 双重确认机制：连续检测到有票才推送

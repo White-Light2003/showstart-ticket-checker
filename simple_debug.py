@@ -1,61 +1,77 @@
+#!/usr/bin/env python3
+# -*- coding: utf-8 -*-
+"""简单调试脚本：捕获真实API请求"""
 import os
-from selenium import webdriver
-from selenium.webdriver.chrome.options import Options
-from selenium.webdriver.chrome.service import Service
-import time
+import sys
+import json
 
-event_id = input("请输入演出ID: ")
-url = f"https://wap.showstart.com/event/{event_id}"
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
-options = Options()
-options.add_argument('--disable-gpu')
-options.add_argument('--no-sandbox')
+def simple_debug():
+    from selenium import webdriver
+    from selenium.webdriver.chrome.options import Options
+    
+    options = Options()
+    options.add_argument('--no-sandbox')
+    options.add_argument('--disable-dev-shm-usage')
+    
+    # 模拟移动端
+    mobile_emulation = {
+        "deviceMetrics": {"width": 390, "height": 844, "pixelRatio": 3.0},
+        "userAgent": "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1"
+    }
+    options.add_experimental_option("mobileEmulation", mobile_emulation)
+    
+    driver = webdriver.Chrome(options=options)
+    
+    # 打开秀动首页
+    driver.get("https://wap.showstart.com")
+    
+    print("="*80)
+    print("操作指南:")
+    print("="*80)
+    print("1. 在浏览器中登录您的秀动账号")
+    print("2. 搜索演出并进入详情页")
+    print("3. 打开浏览器开发者工具 (按 F12)")
+    print("4. 切换到 Network (网络) 标签")
+    print("5. 点击 '购票' 按钮")
+    print("6. 在网络请求列表中找到包含 'ticket/list' 的请求")
+    print("7. 右键点击该请求 -> Copy -> Copy as cURL")
+    print("8. 将复制的内容粘贴到下面:")
+    print("="*80)
+    
+    input("\n完成以上步骤后按回车继续...")
+    
+    # 获取当前页面的所有信息
+    print("\n" + "="*80)
+    print("获取当前页面信息...")
+    print("="*80)
+    
+    # 获取localStorage
+    storage = driver.execute_script("""
+        var result = {};
+        for (var i = 0; i < localStorage.length; i++) {
+            var key = localStorage.key(i);
+            result[key] = localStorage.getItem(key);
+        }
+        return JSON.stringify(result, null, 2);
+    """)
+    
+    print("\n[localStorage内容]")
+    print(storage)
+    
+    # 获取cookies
+    cookies = driver.get_cookies()
+    print("\n[cookies内容]")
+    for cookie in cookies:
+        print(f"  {cookie['name']}: {cookie['value']}")
+    
+    # 获取当前URL
+    print(f"\n[当前页面URL]")
+    print(f"  {driver.current_url}")
+    
+    input("\n按回车退出...")
+    driver.quit()
 
-chrome_driver_paths = [
-    'chromedriver.exe',
-    'C:\\chromedriver\\chromedriver.exe',
-    'C:\\Program Files\\chromedriver\\chromedriver.exe',
-    'C:\\Users\\35184\\Documents\\trae_projects\\dmt\\chromedriver.exe'
-]
-
-driver = None
-for path in chrome_driver_paths:
-    if os.path.exists(path):
-        try:
-            service = Service(path)
-            driver = webdriver.Chrome(service=service, options=options)
-            print(f"使用ChromeDriver: {path}")
-            break
-        except Exception as e:
-            print(f"尝试 {path} 失败: {e}")
-
-if not driver:
-    print("未找到ChromeDriver，尝试默认路径...")
-    try:
-        driver = webdriver.Chrome(options=options)
-    except Exception as e:
-        print(f"无法启动Chrome: {e}")
-        print("请确保ChromeDriver已安装并在PATH中")
-        exit(1)
-
-print(f"正在打开: {url}")
-driver.get(url)
-
-time.sleep(3)
-
-print("\n当前URL:", driver.current_url)
-print("页面标题:", driver.title)
-
-html = driver.page_source
-print(f"\n页面内容长度: {len(html)} 字符")
-
-lines = html.split('\n')
-ticket_lines = [line.strip() for line in lines if '票' in line and len(line.strip()) < 300]
-
-print(f"\n包含'票'的行数: {len(ticket_lines)}")
-for i, line in enumerate(ticket_lines[:20]):
-    print(f"{i+1}. {line[:150]}")
-
-print("\n按回车退出...")
-input()
-driver.quit()
+if __name__ == "__main__":
+    simple_debug()
