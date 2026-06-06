@@ -21,7 +21,7 @@ from datetime import datetime
 from typing import List, Dict, Optional
 
 # ===================== 常量配置 =====================
-NAPCAT_HTTP_URL = "http://127.0.0.1:3000"
+NAPCAT_HTTP_URL = "http://your net port here"
 PUSHPLUS_TOKEN = "your code here"
 DEEPSEEK_API_KEY = "your code here"
 
