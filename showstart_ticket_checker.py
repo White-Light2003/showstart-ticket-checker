@@ -8,13 +8,240 @@ import json
 import hashlib
 import struct
 import random
+import signal
+import atexit
+import sys
 
 from datetime import datetime
 from typing import List, Dict, Optional
 
-NAPCAT_HTTP_URL = "http://your net code here"
-PUSHPLUS_TOKEN = "your code here"  # 在这里填写你的 PushPlus token
-DEEPSEEK_API_KEY = "your code here"  # 在这里填写你的 DeepSeek API Key
+# ===== 日志配置 =====
+LOG_DIR = os.path.join(os.path.dirname(os.path.abspath(__file__)), "logs")
+LOG_FILE = None  # 当前日志文件路径
+LOG_BUFFER = []  # 日志缓冲区
+MAX_LOG_BUFFER = 1000  # 最大缓冲条数
+
+def ensure_log_dir():
+    """确保日志目录存在"""
+    if not os.path.exists(LOG_DIR):
+        os.makedirs(LOG_DIR)
+
+def init_log_file():
+    """初始化日志文件"""
+    global LOG_FILE
+    ensure_log_dir()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    LOG_FILE = os.path.join(LOG_DIR, f"showstart_{timestamp}.log")
+    with open(LOG_FILE, 'w', encoding='utf-8') as f:
+        f.write(f"=== 秀动余票查询日志 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n\n")
+    print(f"[日志] 日志文件已创建: {LOG_FILE}")
+    return LOG_FILE
+
+def log_message(level: str, message: str, print_console: bool = True):
+    """记录日志到文件和缓冲区"""
+    global LOG_BUFFER
+    timestamp = datetime.now().strftime("%H:%M:%S")
+    log_line = f"[{timestamp}] [{level}] {message}"
+    
+    # 添加到缓冲区
+    LOG_BUFFER.append(log_line)
+    if len(LOG_BUFFER) > MAX_LOG_BUFFER:
+        LOG_BUFFER.pop(0)
+    
+    # 写入文件
+    if LOG_FILE:
+        try:
+            with open(LOG_FILE, 'a', encoding='utf-8') as f:
+                f.write(log_line + '\n')
+        except Exception:
+            pass
+    
+    # 控制台输出
+    if print_console:
+        print(message)
+
+def export_logs():
+    """导出当前日志到文件并返回路径"""
+    if not LOG_BUFFER:
+        return None
+    
+    ensure_log_dir()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    export_path = os.path.join(LOG_DIR, f"showstart_export_{timestamp}.log")
+    
+    with open(export_path, 'w', encoding='utf-8') as f:
+        f.write(f"=== 秀动余票查询日志导出 - {datetime.now().strftime('%Y-%m-%d %H:%M:%S')} ===\n\n")
+        for line in LOG_BUFFER:
+            f.write(line + '\n')
+    
+    return export_path
+
+class TeeOutput:
+    """同时输出到控制台和日志的包装器"""
+    def __init__(self, original_stream, level="INFO"):
+        self.original_stream = original_stream
+        self.level = level
+    
+    def write(self, text):
+        self.original_stream.write(text)
+        if text.strip():
+            log_message(self.level, text.strip(), print_console=False)
+    
+    def flush(self):
+        self.original_stream.flush()
+
+def setup_logging():
+    """设置日志捕获"""
+    init_log_file()
+    init_check_log()
+    sys.stdout = TeeOutput(sys.stdout, "INFO")
+    sys.stderr = TeeOutput(sys.stderr, "ERROR")
+
+# ===== 查票记录日志 =====
+CHECK_LOG_FILE = None  # 当前查票记录文件路径
+CHECK_LOG_BUFFER = []  # 查票记录缓冲区
+
+def init_check_log():
+    """初始化查票记录文件"""
+    global CHECK_LOG_FILE
+    ensure_log_dir()
+    timestamp = datetime.now().strftime("%Y%m%d")
+    CHECK_LOG_FILE = os.path.join(LOG_DIR, f"check_records_{timestamp}.csv")
+    
+    # 如果文件不存在，创建表头
+    if not os.path.exists(CHECK_LOG_FILE):
+        with open(CHECK_LOG_FILE, 'w', encoding='utf-8') as f:
+            f.write("查票时间,演出ID,票档名称,票价,状态,API响应,备注\n")
+    
+    return CHECK_LOG_FILE
+
+def log_check_record(event_id: str, tickets: List[Dict], api_response: dict = None, error_msg: str = None):
+    """记录查票详情"""
+    global CHECK_LOG_BUFFER
+    current_time = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
+    
+    if error_msg:
+        # 记录错误
+        record = {
+            'time': current_time,
+            'event_id': event_id,
+            'name': '-',
+            'price': '-',
+            'status': '错误',
+            'api_response': str(error_msg)[:100],
+            'note': ''
+        }
+    else:
+        if not tickets:
+            # 无票信息
+            record = {
+                'time': current_time,
+                'event_id': event_id,
+                'name': '-',
+                'price': '-',
+                'status': '无数据',
+                'api_response': '正常' if api_response else '无响应',
+                'note': '未获取到票档信息'
+            }
+        else:
+            for ticket in tickets:
+                record = {
+                    'time': current_time,
+                    'event_id': event_id,
+                    'name': ticket.get('name', '-'),
+                    'price': ticket.get('price', '-'),
+                    'status': ticket.get('status', '-'),
+                    'api_response': '正常' if api_response else '无响应',
+                    'note': ticket.get('note', '')
+                }
+                CHECK_LOG_BUFFER.append(record)
+                
+                # 写入CSV文件
+                if CHECK_LOG_FILE:
+                    try:
+                        with open(CHECK_LOG_FILE, 'a', encoding='utf-8') as f:
+                            write_csv_line(f, record)
+                    except Exception:
+                        pass
+            return  # tickets有数据时不记录空信息
+    
+    CHECK_LOG_BUFFER.append(record)
+    if CHECK_LOG_FILE:
+        try:
+            with open(CHECK_LOG_FILE, 'a', encoding='utf-8') as f:
+                write_csv_line(f, record)
+        except Exception:
+            pass
+
+def export_check_logs():
+    """导出查票记录到文件"""
+    if not CHECK_LOG_BUFFER:
+        print("[WARNING] 暂无查票记录可导出")
+        return None
+    
+    ensure_log_dir()
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    export_path = os.path.join(LOG_DIR, f"check_records_export_{timestamp}.csv")
+    
+    with open(export_path, 'w', encoding='utf-8') as f:
+        f.write("查票时间,演出ID,票档名称,票价,状态,API响应,备注\n")
+        for record in CHECK_LOG_BUFFER:
+            write_csv_line(f, record)
+    
+    return export_path
+
+def get_check_summary():
+    """获取查票记录摘要"""
+    if not CHECK_LOG_BUFFER:
+        return "暂无记录"
+    
+    total = len(CHECK_LOG_BUFFER)
+    has_ticket = sum(1 for r in CHECK_LOG_BUFFER if r['status'] == '有票')
+    sold_out = sum(1 for r in CHECK_LOG_BUFFER if r['status'] == '售罄')
+    return_ticket = sum(1 for r in CHECK_LOG_BUFFER if r['status'] == '回流票')
+    errors = sum(1 for r in CHECK_LOG_BUFFER if r['status'] == '错误')
+    
+    return f"总记录: {total}条 | 有票: {has_ticket} | 售罄: {sold_out} | 回流票: {return_ticket} | 错误: {errors}"
+
+def csv_escape(value):
+    """CSV字段转义，防止注入"""
+    s = str(value)
+    # 如果包含逗号、引号或换行符，需要用引号包裹并转义内部引号
+    if ',' in s or '"' in s or '\n' in s or '\r' in s:
+        return '"' + s.replace('"', '""') + '"'
+    return s
+
+def write_csv_line(f, record):
+    """安全写入CSV行"""
+    line = ','.join([
+        csv_escape(record['time']),
+        csv_escape(record['event_id']),
+        csv_escape(record['name']),
+        csv_escape(record['price']),
+        csv_escape(record['status']),
+        csv_escape(record['api_response']),
+        csv_escape(record['note'])
+    ])
+    f.write(line + '\n')
+
+def load_config():
+    """从配置文件加载敏感配置"""
+    config_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), "config.env")
+    if os.path.exists(config_path):
+        with open(config_path, 'r', encoding='utf-8') as f:
+            for line in f:
+                line = line.strip()
+                if line and not line.startswith('#') and '=' in line:
+                    key, value = line.split('=', 1)
+                    os.environ.setdefault(key.strip(), value.strip())
+
+# 加载配置文件
+load_config()
+
+NAPCAT_HTTP_URL = os.environ.get("NAPCAT_HTTP_URL", "http://127.0.0.1:3000")
+# 敏感配置：建议通过 config.env 文件或环境变量设置，不要提交到版本控制
+PUSHPLUS_TOKEN = os.environ.get("PUSHPLUS_TOKEN", "")  # 从 config.env 或环境变量读取
+DEEPSEEK_API_KEY = os.environ.get("DEEPSEEK_API_KEY", "")  # 从 config.env 或环境变量读取
 
 # ChiliChill乐团歌词库
 CHILICHILL_LYRICS = [
@@ -29,22 +256,61 @@ CHILICHILL_LYRICS = [
     "高举一面夜色~星空替你记得~究竟为了什么活着~——ChiliChill《启航的歌》","褪色的画面重叠~数着还没过完的日子入眠~—ChiliChill《时光盲盒》","等天黑~再过一夜~—ChiliChill《搬家前，短暂夜》","当你的天空突然下起了大雨，那是我在为你炸乌云~—ChiliChill《让风告诉你》",
     "Drop the beat~I feel~Like a rollercoaster going up and down~—ChiliChill《pinking》","Overtake~Step on the GAS~Dash like a vroom vroom vroom~—ChiliChill《都市不丽人》","摘一朵纯白色的花~塞西莉亚~塞西莉亚~—ChiliChill《别让我担心》",
     "告诉我~不想再继续~我的心就石沉大海~偏偏你~就是拖着不坦白~—ChiliChill《半梦》","我的悲伤~是水做的~是水做的~—ChiliChill《我的悲伤是水做的》","怎么不挽留~拦下~我的冲动~—ChiliChill《半醒》","你没喝完的无糖可乐~冰箱里还剩几瓶~全部丢出去~全部丢出去~换成我爱的雪碧~—ChiliChill《心碎烧酒》",
-    "心在波比~震天动地~是我是你~不太确定~—ChiliChill《有线耳机》","高温缩减，长江中下游地带有大雨到暴雨~—ChiliChill《晚间天气预报》"
+    "心在波比~震天动地~是我是你~不太确定~—ChiliChill《有线耳机》","高温缩减，长江中下游地带有大雨到暴雨~—ChiliChill《晚间天气预报》","想象着，别样的角色，找寻另一个我~—ChiliChill《另一个我》"
 ]
 
 # 定时关闭任务配置
-DAILY_SHUTDOWN_HOUR = 21  # 每天自动关闭时间（小时）
-QQ_PUSH_END_DATE = datetime(2026, 6, 8, 0, 0, 0)  # QQ推送关闭日期
-QQ_PUSH_NOTICE_DATES = [datetime(2026, 6, 4), datetime(2026, 6, 5), datetime(2026, 6, 6), datetime(2026, 6, 7)]  # 发送关闭通知的日期
-QQ_PUSH_NOTICE_TIME = (22, 0)  # 关闭通知发送时间（小时，分钟）
-QQ_PUSH_END_NOTICE_SENT = False  # 是否已发送6月8日零点关闭的通知
+DAILY_SHUTDOWN_HOUR = 23  # 每天自动关闭时间（小时）
+QQ_PUSH_END_DATE = datetime(2026, 6, 8, 12, 10, 0)  # QQ推送关闭日期（6月8日中午12:10）
+QQ_PUSH_NOTICE_DATES = [datetime(2026, 6, 4), datetime(2026, 6, 5), datetime(2026, 6, 6), datetime(2026, 6, 7)]  # 发送关闭通知的日期（6.4-6.7）
+QQ_PUSH_NOTICE_TIME = (23, 0)  # 关闭通知发送时间（每天23:00）
+QQ_PUSH_END_NOTICE_SENT = False  # 是否已发送6月8日中午12:00关闭的通知
 DAILY_SHUTDOWN_DONE = False  # 今日是否已执行每日关闭
+
+# 关闭通知标志（用于检测是否是意外关闭）
+SCRIPT_SHUTDOWN_NOTIFIED = False
+
+def send_shutdown_notification():
+    """发送脚本意外关闭的通知"""
+    global SCRIPT_SHUTDOWN_NOTIFIED
+    if SCRIPT_SHUTDOWN_NOTIFIED:
+        return
+    SCRIPT_SHUTDOWN_NOTIFIED = True
+    
+    msg = "稍等，脚本开发者不小心碰到脚本的关闭按钮了，稍后重新开启脚本"
+    print(f"\n[WARNING] {msg}")
+    
+    try:
+        target_groups = get_target_groups()
+        for tg in target_groups:
+            send_to_qq_group(tg, msg)
+    except Exception as e:
+        print(f"[ERROR] 发送关闭通知失败: {e}")
+
+def shutdown_handler(signum, frame):
+    """信号处理器 - 在脚本关闭前发送通知"""
+    send_shutdown_notification()
+    # 恢复默认信号处理
+    signal.signal(signum, signal.SIG_DFL)
+    raise KeyboardInterrupt("脚本被关闭")
+
+def register_shutdown_handlers():
+    """注册关闭信号处理器"""
+    signal.signal(signal.SIGINT, shutdown_handler)
+    signal.signal(signal.SIGTERM, shutdown_handler)
+    atexit.register(send_shutdown_notification)
 
 # 推广消息
 NEW_SONG_PROMO_MSG = """【最新消息】
 
 上海场无料现在开始征集，各位老师如有无料可以分享~
-期待各位老师的无料！"""
+期待各位老师的无料！
+
+【高考应援】
+2026高考季，ChiliChill乐团、秀动bot和开发者在此祝各位热爱ChiliChill的高考生金榜题名！
+旗开得胜，12年寒窗不负韶华，奔向属于自己的星辰大海，我们都会拥有美好的未来！
+向着最终的梦想前行吧，加油！
+"""
 
 # ===== 秀动魔改MD5（完整正版） =====
 def left_rotate(x, n):
@@ -596,7 +862,7 @@ def generate_ticket_message(event_id: str, tickets: List[Dict]) -> str:
         1. 使用表情符号和换行，让消息更生动
         2. 语气要兴奋、紧迫，营造抢购氛围
         3. 突出"回流票"、"手速"、"快抢"等关键词
-        4. 结尾加上催促大家去秀动APP抢购的号召
+        4. 结尾加上催促大家去秀动APP抢购的号召，最后一句加上“@全体成员”
         5. 不要超过4行
         """
     else:
@@ -1352,6 +1618,12 @@ def main():
         checker = ShowstartTicketChecker(use_api=use_api_mode)
         is_logged_in = checker.check_login_status()
         
+        # 初始化日志系统
+        setup_logging()
+        
+        # 注册关闭信号处理器（捕获Ctrl+C和关闭窗口事件）
+        register_shutdown_handlers()
+        
         while True:
             print("\n" + "="*70)
             print("秀动余票查询工具 v3.3|CopyRight 录音室楼下的白灯")
@@ -1369,9 +1641,10 @@ def main():
             print("  2. 持续监控余票")
             print("  3. 持续监控余票 + QQ推送")
             print("  4. 故障诊断")
-            print("  5. 退出\n")
+            print("  5. 导出日志（含查票记录）")
+            print("  6. 退出\n")
 
-            choice = input("请输入选项 (1/2/3/4/5): ").strip()
+            choice = input("请输入选项 (1/2/3/4/5/6): ").strip()
 
             if choice == '1':
                 event_id = input("请输入演出ID（演出ID可从网址栏获取，如https://www.showstart.com/event/295821，其中最后六位数295821就是演出ID）: ").strip()
@@ -1382,6 +1655,7 @@ def main():
                 try:
                     print(f"\n[INFO] 正在查询该演出...")
                     tickets = checker.check_tickets(event_id)
+                    log_check_record(event_id, tickets)  # 记录查票日志
                     
                     print_ticket_info(tickets, f"演出 {event_id}")
                     
@@ -1392,6 +1666,7 @@ def main():
                         is_logged_in = True
                         print(f"\n[INFO] 登录成功，正在查询该演出的余票...")
                         tickets = checker.check_tickets(event_id)
+                        log_check_record(event_id, tickets)  # 记录查票日志
                         print_ticket_info(tickets, f"演出 {event_id}")
                     
                     checker._close_driver()
@@ -1411,6 +1686,7 @@ def main():
                 try:
                     print(f"\n[INFO] 正在查询该演出...")
                     tickets = checker.check_tickets(event_id)
+                    log_check_record(event_id, tickets)  # 记录查票日志
                     
                     print_ticket_info(tickets, f"演出 {event_id}")
                     
@@ -1421,6 +1697,7 @@ def main():
                         is_logged_in = True
                         print(f"\n[INFO] 登录成功，正在查询该演出的余票信息...")
                         tickets = checker.check_tickets(event_id)
+                        log_check_record(event_id, tickets)  # 记录查票日志
                         print_ticket_info(tickets, f"演出 {event_id}")
                     
                     try:
@@ -1439,6 +1716,7 @@ def main():
                             prevent_sleep()
 
                             tickets = checker.check_tickets(event_id)
+                            log_check_record(event_id, tickets)  # 记录查票日志
                             
                             available_count = sum(1 for t in tickets if t['status'] == '有票')
 
@@ -1484,6 +1762,7 @@ def main():
                 try:
                     print(f"\n[INFO] 正在查询该演出...")
                     tickets = checker.check_tickets(event_id)
+                    log_check_record(event_id, tickets)  # 记录查票日志
                     
                     print_ticket_info(tickets, f"演出 {event_id}")
                     
@@ -1494,12 +1773,14 @@ def main():
                         is_logged_in = True
                         print(f"\n[INFO] 登录成功，正在查询该演出的余票信息...")
                         tickets = checker.check_tickets(event_id)
+                        log_check_record(event_id, tickets)  # 记录查票日志
                         print_ticket_info(tickets, f"演出 {event_id}")
                     
                     try:
                         interval = int(input("\n请输入查票间隔(秒，默认30): ").strip() or 30)
                     except ValueError:
                         interval = 30
+
 
                     target_groups = select_target_groups()
                     if not target_groups:
@@ -1577,6 +1858,7 @@ def main():
                                 prevent_sleep()
 
                                 tickets = checker.check_tickets(event_id)
+                                log_check_record(event_id, tickets)  # 记录查票日志
                                 
                                 available_count = sum(1 for t in tickets if t['status'] == '有票')
                                 # 检测回流票状态（乐迷未支付）
@@ -1760,6 +2042,28 @@ def main():
                 input("\n按回车键继续...")
 
             elif choice == '5':
+                print("\n[INFO] 正在导出日志...")
+                print(f"\n📊 当前查票记录统计：{get_check_summary()}")
+                
+                # 导出查票记录
+                check_export_path = export_check_logs()
+                if check_export_path:
+                    print(f"[SUCCESS] 查票记录已导出: {check_export_path}")
+                else:
+                    print("[WARNING] 暂无查票记录可导出")
+                
+                # 导出系统日志
+                log_export_path = export_logs()
+                if log_export_path:
+                    print(f"[SUCCESS] 系统日志已导出: {log_export_path}")
+                    print(f"[INFO] 系统日志包含最近 {len(LOG_BUFFER)} 条记录")
+                else:
+                    print("[WARNING] 暂无系统日志可导出")
+                
+                print(f"\n[INFO] 日志文件保存位置: {os.path.abspath(LOG_DIR)}")
+                input("\n按回车键继续...")
+
+            elif choice == '6':
                 print("感谢您的使用，祝您抢票成功，再见！")
                 break
 
